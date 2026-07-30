@@ -1,0 +1,28 @@
+# Data — never commit. Redistribution terms differ per dataset, and files are too large.
+data/raw/**
+data/processed/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Model checkpoints / weights
+*.pt
+*.pth
+*.ckpt
+outputs/checkpoints/**
+
+# Local config with personal paths
+configs/paths.local.yaml
+
+# Environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs (keep reports, drop verbose logs)
+outputs/logs/*.log

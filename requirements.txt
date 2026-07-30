@@ -1,0 +1,18 @@
+# Core
+numpy
+pandas
+Pillow
+tqdm
+PyYAML
+
+# Hashing / de-duplication (Step 1)
+imagehash
+
+# Deep learning (used from Step 4/5 onward, included now so environment_check.py can verify)
+torch
+torchvision
+timm
+
+# Metrics / calibration (used from Step 6 onward)
+scikit-learn
+scipy

@@ -1,0 +1,26 @@
+# Default relative paths — works out of the box if you follow the README's
+# folder layout. Override locally in configs/paths.local.yaml (git-ignored)
+# if your data lives somewhere else on your machine.
+
+datasets:
+  ddr:
+    images: "data/raw/ddr/images"
+    labels: "data/raw/ddr/labels.csv"      # adjust filename to match what you download
+  deepdrid:
+    images: "data/raw/deepdrid/images"
+    labels: "data/raw/deepdrid/labels.csv"
+  aptos2019:
+    images: "data/raw/aptos2019/images"
+    labels: "data/raw/aptos2019/train.csv"
+
+outputs:
+  reports_dir: "outputs/reports"
+  logs_dir: "outputs/logs"
+  processed_dir: "data/processed"
+
+# Fixed binarization rule — see project protocol doc. Do not change without
+# updating it everywhere (training, evaluation, and the paper's methods text).
+binarization:
+  referable_grades: [2, 3, 4]
+  non_referable_grades: [0, 1]
+  ungradable_label: "ungradable"   # excluded from training, kept for referral analysis
