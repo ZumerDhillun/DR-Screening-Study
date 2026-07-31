@@ -1,0 +1,10 @@
+{
+  "pos_weight": 1.208176,
+  "train_samples": 9939,
+  "val_samples": 2485,
+  "train_class_counts": {
+    "0": 5438,
+    "1": 4501
+  },
+  "computed_from": "train split only (post-split), see Step 3 script for why"
+}

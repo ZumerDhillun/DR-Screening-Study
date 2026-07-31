@@ -8,6 +8,10 @@ PyYAML
 # Hashing / de-duplication (Step 1)
 imagehash
 
+# Image preprocessing (Step 4)
+opencv-python
+matplotlib
+
 # Deep learning (used from Step 4/5 onward, included now so environment_check.py can verify)
 torch
 torchvision

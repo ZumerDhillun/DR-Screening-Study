@@ -1,8 +1,10 @@
-# Data — never commit. Redistribution terms differ per dataset, and files are too large.
+# Data — never commit raw images. Redistribution terms differ per dataset, and files are too large.
 data/raw/**
-data/processed/**
 !data/raw/.gitkeep
-!data/processed/.gitkeep
+
+# Processed CSVs/JSON (labels, splits, weights) ARE committed — small, no image
+# bytes inside them, safe. Only the verification preview images are excluded.
+data/processed/preprocessed_samples/*.png
 
 # Model checkpoints / weights
 *.pt
