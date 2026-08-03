@@ -93,6 +93,29 @@ def find_col(df, target):
     return None
 
 
+def find_label_file(base_dir, filename):
+    """
+    Searches base_dir recursively for an exact filename match (case-
+    insensitive), instead of assuming it sits directly inside base_dir.
+    This is the same fix already applied to image lookups, extended to
+    label files -- zip extractions frequently create an extra wrapper
+    folder (e.g. data/raw/ddr/DR_grading_v2/dr_grading.csv instead of
+    data/raw/ddr/dr_grading.csv), which breaks a hardcoded path silently.
+    Returns the first match found, and warns if more than one exists.
+    """
+    from pathlib import Path
+    base = Path(base_dir)
+    if not base.exists():
+        return None
+    matches = [p for p in base.rglob("*") if p.is_file() and p.name.lower() == filename.lower()]
+    if not matches:
+        return None
+    if len(matches) > 1:
+        print(f"  [WARN] Multiple files named '{filename}' found under {base_dir}: "
+              f"{[str(m) for m in matches]}. Using the first one — verify this is correct.")
+    return str(matches[0])
+
+
 def report(name, n_before, df_after):
     dropped = n_before - len(df_after)
     print(f"  {name}: {n_before} rows -> {len(df_after)} kept, {dropped} dropped (ungradable/invalid)")
@@ -111,10 +134,11 @@ def report_missing(df, label):
 # 1. DDR
 # ==========================================
 print("Processing DDR...")
-ddr_csv = "data/raw/ddr/dr_grading.csv"
 DDR_BASE = "data/raw/ddr"
+ddr_csv = find_label_file(DDR_BASE, "dr_grading.csv")
 
-if os.path.exists(ddr_csv):
+if ddr_csv:
+    print(f"  Found label file at: {ddr_csv}")
     ddr_index = build_file_index(DDR_BASE)
 
     ddr_df = pd.read_csv(ddr_csv)
@@ -135,7 +159,8 @@ if os.path.exists(ddr_csv):
     ddr_clean.to_csv("data/processed/ddr_clean.csv", index=False)
     print(f"  Saved data/processed/ddr_clean.csv ({len(ddr_clean)} rows)\n")
 else:
-    print(f"  [WARN] {ddr_csv} not found.\n")
+    print(f"  [WARN] dr_grading.csv not found anywhere under {DDR_BASE}. "
+          f"Run: !find {DDR_BASE} -maxdepth 4  in Colab to see the actual extracted structure.\n")
 
 
 # ==========================================
@@ -165,13 +190,16 @@ def get_eye_specific_grade(row, col_map):
     return None
 
 
-for split, csv_path in [
-    ("train", f"{DEEPDRID_BASE}/regular-fundus-training/regular-fundus-training.csv"),
-    ("validation", f"{DEEPDRID_BASE}/regular-fundus-validation/regular-fundus-validation.csv"),
+for split, filename in [
+    ("train", "regular-fundus-training.csv"),
+    ("validation", "regular-fundus-validation.csv"),
 ]:
-    if not os.path.exists(csv_path):
-        print(f"  [WARN] {csv_path} not found.")
+    csv_path = find_label_file(DEEPDRID_BASE, filename)
+    if csv_path is None:
+        print(f"  [WARN] {filename} not found anywhere under {DEEPDRID_BASE}. "
+              f"Run: !find {DEEPDRID_BASE} -maxdepth 4  in Colab to see the actual structure.")
         continue
+    print(f"  Found label file at: {csv_path}")
 
     df = pd.read_csv(csv_path)
     print(f"  Columns found in {csv_path}: {list(df.columns)}")
@@ -276,15 +304,17 @@ print("Processing APTOS 2019...")
 APTOS_BASE = "data/raw/aptos2019"
 aptos_index = build_file_index(APTOS_BASE)
 
-aptos_files = {
-    "train": f"{APTOS_BASE}/train_1.csv",
-    "valid": f"{APTOS_BASE}/valid.csv",
-    "test": f"{APTOS_BASE}/test.csv",
+aptos_filenames = {
+    "train": "train_1.csv",
+    "valid": "valid.csv",
+    "test": "test.csv",
 }
 
 aptos_frames = []
-for split, path in aptos_files.items():
-    if os.path.exists(path):
+for split, filename in aptos_filenames.items():
+    path = find_label_file(APTOS_BASE, filename)
+    if path:
+        print(f"  Found label file at: {path}")
         df = pd.read_csv(path)
         print(f"  Columns found in {path}: {list(df.columns)}")
         df["dr_grade"] = df["diagnosis"]
@@ -293,7 +323,8 @@ for split, path in aptos_files.items():
         df["split"] = split
         aptos_frames.append(df)
     else:
-        print(f"  [WARN] {path} not found.")
+        print(f"  [WARN] {filename} not found anywhere under {APTOS_BASE}. "
+              f"Run: !find {APTOS_BASE} -maxdepth 4  in Colab to see the actual structure.")
 
 if aptos_frames:
     aptos_all = pd.concat(aptos_frames, ignore_index=True)

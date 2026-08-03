@@ -1,5 +1,25 @@
 """
 Step 3 — Class Imbalance & Stratified Train/Val Split (corrected)
+
+Fixes applied vs. the original draft:
+  1. pos_weight is now computed from the TRAINING split only, after the
+     split, not from the full train+val pool beforehand. Computing it on
+     data that includes your validation set is a (small but real) form
+     of information leakage into a training decision.
+  2. Stratification uses the native 0-4 dr_grade, not just the binary
+     referable label. Binary-only stratification protects the overall
+     referable/non-referable ratio but says nothing about whether your
+     rarest classes (severe, proliferative) end up reasonably
+     represented in both splits — with small counts to begin with, pure
+     chance could dump most of your proliferative cases into one split.
+     Stratifying on grade automatically preserves the binary ratio too.
+  3. Post-split class balance is now printed for both train and val, at
+     both grade level and binary level, so you can actually see the
+     result rather than trusting stratify= blindly.
+  4. class_weights.txt replaced with class_weights.json — the training
+     script in Step 5 will need to parse this reliably, and free-form
+     text is more brittle to read back than JSON.
+
 KNOWN, DOCUMENTED LIMITATION (not a bug, cannot be fixed with the data
 available): DDR's public release does not include patient identifiers,
 so this split is at the IMAGE level, not the patient level. DDR has
@@ -32,18 +52,39 @@ if not os.path.exists(ddr_path):
 df = pd.read_csv(ddr_path)
 print(f"Loaded DDR cleaned metadata: {len(df)} initial rows")
 
-# 2. Filter out rows whose image files don't exist on disk.
-# NOTE: this is NOT redundant with Step 2 — Step 2 records image_path as
-# missing/NaN for unmatched images but does not drop those rows from the
-# CSV (it only drops rows with an invalid/ungradable label). This filter
-# is where that final cleanup actually happens.
-df["file_exists"] = df["image_path"].apply(lambda p: os.path.exists(str(p)))
-df_valid = df[df["file_exists"]].copy().drop(columns=["file_exists"])
+# 2. Filter out rows whose image files don't exist OR aren't valid, openable
+# images. NOTE: existence alone is not enough -- a truncated/interrupted
+# download or a partial zip extraction can leave a file that EXISTS on disk
+# but isn't real image data. That kind of file passes an os.path.exists()
+# check, sails through Step 2 and this filter's old version, and then kills
+# the entire training run the first time the DataLoader tries to open it
+# (this is exactly the failure that showed up in Step 4). Checking real
+# openability once here, up front, costs a few minutes on 12,000+ images --
+# far cheaper than discovering it mid-training.
+from PIL import Image, UnidentifiedImageError
+
+
+def is_openable_image(path):
+    path = str(path)
+    if not os.path.exists(path):
+        return False
+    try:
+        with Image.open(path) as img:
+            img.convert("RGB")  # mirrors exactly what FundusDataset does in Step 4
+        return True
+    except (UnidentifiedImageError, OSError, ValueError):
+        return False
+
+
+print("Checking that every image file actually opens (this may take a few minutes "
+      "on the full dataset)...")
+df["file_valid"] = df["image_path"].apply(is_openable_image)
+df_valid = df[df["file_valid"]].copy().drop(columns=["file_valid"])
 dropped_count = len(df) - len(df_valid)
-print(f"Filtered out {dropped_count} missing images from DDR. Valid images on disk: {len(df_valid)}")
-print("(Sanity check: this dropped_count should roughly match the '[WARN] ... no matching "
-      "image file' count Step 2 printed for DDR — if it's very different, something changed "
-      "between runs.)\n")
+print(f"Filtered out {dropped_count} missing/corrupt images from DDR. Valid images on disk: {len(df_valid)}")
+print("(This count may be larger than Step 2's '[WARN] ... no matching image file' count -- "
+      "that warning only catches files that don't EXIST at all. This check also catches files "
+      "that exist but are corrupted/unreadable, which Step 2 has no way to detect.)\n")
 
 # 3. Stratified Train / Validation split — FIX #2: stratify on native grade
 print("--- Native grade distribution (full valid set) ---")
