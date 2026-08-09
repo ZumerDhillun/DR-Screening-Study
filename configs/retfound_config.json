@@ -1,0 +1,8 @@
+{
+    "model_key": "retfound",
+    "best_val_auc": 0.9391096765743767,
+    "T_decision": 0.38550078868865967,
+    "T_temp": 1.7246264219284058,
+    "pos_weight": 1.175501,
+    "frozen": true
+}
