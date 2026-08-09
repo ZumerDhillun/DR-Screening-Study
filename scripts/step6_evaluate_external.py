@@ -1,9 +1,9 @@
 """
-Step 6 — Frozen Evaluation on DeepDRiD & APTOS 2019 (Fully Corrected)
+Step 6 — Frozen Evaluation on DeepDRiD & APTOS 2019
 USAGE:
     python scripts/step6_evaluate_external.py --model convnext_v2_large \
         --weights "/content/drive/My Drive/retinavision_models/convnext_v2_large_best.pth" \
-        --config  "configs/convnext_v2_large_config.json"
+        --config  "/content/drive/My Drive/retinavision_models/convnext_v2_large_config.json"
 """
 
 import argparse
@@ -34,7 +34,7 @@ def load_model(model_key, weights_path, device, retfound_raw_checkpoint=False):
 
     if model_key == "convnext_v2_large":
         model = timm.create_model(
-            "convnextv2_large.fcmae_ft_in22k_in1k", pretrained=False, num_classes=1
+            "convnextv2_large.fcmae_ft_in22k_in1k", pretrained=False, num_classes=1,
         )
         state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
 
@@ -78,7 +78,7 @@ def calculate_ece(y_true, y_prob, n_bins=10):
 
 
 def sanitize_dataframe_paths(df, label):
-    """Checks for existing files and drops any missing rows in-memory before evaluation."""
+    """Filters out non-existent paths in memory rather than crashing with an error."""
     initial_count = len(df)
     valid_mask = df["image_path"].apply(lambda p: os.path.exists(str(p)))
     clean_df = df[valid_mask].copy()
@@ -86,11 +86,11 @@ def sanitize_dataframe_paths(df, label):
 
     if dropped_count > 0:
         print(
-            f"  [WARN] {label}: {dropped_count}/{initial_count} rows point to non-existent image "
-            f"files on disk. Automatically filtered out in-memory before inference."
+            f"  [WARN] {label}: {dropped_count}/{initial_count} image paths don't exist on disk. "
+            f"Filtered out in-memory ({len(clean_df)} valid images retained)."
         )
     else:
-        print(f"  {label}: path check passed ({initial_count}/{initial_count} images exist on disk)")
+        print(f"  {label}: path check passed ({initial_count}/{initial_count} paths all exist)")
 
     return clean_df
 
@@ -107,7 +107,9 @@ def run_inference(model, dataloader, device):
     return np.array(raw_logits), np.array(targets), np.array(paths)
 
 
-def compute_dataset_metrics(raw_logits, targets, t_temp, t_decision):
+def compute_dataset_metrics(
+    raw_logits, targets, t_temp, t_decision, save_path=None, paths=None, extra_cols=None
+):
     if len(targets) == 0:
         return None
     if len(np.unique(targets)) < 2:
@@ -119,6 +121,19 @@ def compute_dataset_metrics(raw_logits, targets, t_temp, t_decision):
     calibrated_logits = raw_logits / t_temp
     uncal_probs = 1 / (1 + np.exp(-raw_logits))
     cal_probs = 1 / (1 + np.exp(-calibrated_logits))
+
+    if save_path is not None:
+        pred_df = pd.DataFrame({
+            "image_path": paths if paths is not None else np.arange(len(targets)),
+            "target": targets,
+            "raw_logit": raw_logits,
+            "cal_prob": cal_probs,
+        })
+        if extra_cols:
+            for col_name, col_values in extra_cols.items():
+                pred_df[col_name] = col_values
+        pred_df.to_csv(save_path, index=False)
+        print(f"  Saved per-sample predictions to: {save_path}")
 
     auc = roc_auc_score(targets, cal_probs) if len(np.unique(targets)) > 1 else None
     pr_auc = average_precision_score(targets, cal_probs) if len(np.unique(targets)) > 1 else None
@@ -169,6 +184,7 @@ def evaluate_external(
     transform = get_transforms(img_size=224, is_training=False, model_name=model_key)
     results = {"model_key": model_key, "frozen_config": config, "datasets": {}}
 
+    # 1. APTOS 2019
     aptos_csv = "data/processed/aptos_clean.csv"
     if os.path.exists(aptos_csv):
         print("\n--- Evaluating APTOS 2019 ---")
@@ -182,13 +198,15 @@ def evaluate_external(
                 shuffle=False,
                 num_workers=2,
             )
-            logits, targets, _ = run_inference(model, loader_aptos, device)
+            logits, targets, paths = run_inference(model, loader_aptos, device)
+            pred_path = os.path.join(out_dir, f"{model_key}_aptos2019_predictions.csv")
             results["datasets"]["aptos2019"] = compute_dataset_metrics(
-                logits, targets, t_temp, t_decision
+                logits, targets, t_temp, t_decision, save_path=pred_path, paths=paths
             )
     else:
         print(f"  [WARN] {aptos_csv} not found -- skipping APTOS evaluation.")
 
+    # 2. DeepDRiD
     deepdrid_csv = "data/processed/deepdrid_clean.csv"
     if os.path.exists(deepdrid_csv):
         print("\n--- Evaluating DeepDRiD ---")
@@ -203,8 +221,22 @@ def evaluate_external(
                 num_workers=2,
             )
             logits, targets, paths = run_inference(model, loader_deepdrid, device)
+            pred_path = os.path.join(out_dir, f"{model_key}_deepdrid_predictions.csv")
+
+            quality_extra = (
+                {"overall_quality": df_deepdrid_clean["overall_quality"].values}
+                if "overall_quality" in df_deepdrid_clean.columns
+                else None
+            )
+
             results["datasets"]["deepdrid_overall"] = compute_dataset_metrics(
-                logits, targets, t_temp, t_decision
+                logits,
+                targets,
+                t_temp,
+                t_decision,
+                save_path=pred_path,
+                paths=paths,
+                extra_cols=quality_extra,
             )
 
             if "overall_quality" in df_deepdrid_clean.columns:
@@ -231,7 +263,7 @@ def evaluate_external(
     with open(out_file, "w") as f:
         json.dump(results, f, indent=4)
 
-    print(f"\n Step 6 evaluation complete. Saved report to: {out_file}")
+    print(f"\nStep 6 evaluation complete. Saved report to: {out_file}")
     return results
 
 
